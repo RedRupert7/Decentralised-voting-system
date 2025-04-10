@@ -30,3 +30,67 @@ test text
 ;; 0: Whitelist
 ;; 1: Signature
 ;; 2: TokenHolding
+;; Define the elections map
+(define-map elections
+  { election-id: uint }
+  {
+    name: (string-ascii 100),
+    description: (string-ascii 500),
+    start-time: uint,
+    end-time: uint,
+    status: uint,
+    creator: principal,
+    verification-method: uint,
+    minimum-token-holding: uint,
+    token-address: (optional principal),
+    private-voting: bool,
+    proposal-count: uint,
+    total-votes-cast: uint,
+    results-published: bool
+  }
+)
+
+;; Define the proposals map
+(define-map proposals
+  { election-id: uint, proposal-id: uint }
+  {
+    name: (string-ascii 100),
+    description: (string-ascii 500),
+    vote-count: uint
+  }
+)
+
+;; Define the voters map
+(define-map election-voters
+  { election-id: uint, voter: principal }
+  { registered: bool, has-voted: bool }
+)
+
+;; Define the voter-proposal-votes map
+(define-map voter-proposal-votes
+  { voter: principal, election-id: uint }
+  { proposal-id: uint }
+)
+
+;; Define the used signatures map
+(define-map used-signatures
+  { signature-hash: (buff 32) }
+  { used: bool }
+)
+
+;; Store the next election ID
+(define-data-var next-election-id uint u1)
+
+;; Read-only function to get the next election ID
+(define-read-only (get-next-election-id)
+  (var-get next-election-id)
+)
+
+;; Initialize contract with sender as admin and election manager
+(define-public (initialize)
+  (begin
+    (var-set admin tx-sender)
+    (map-set election-managers tx-sender true)
+    (ok true)
+  )
+)
