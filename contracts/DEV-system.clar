@@ -94,3 +94,97 @@ test text
     (ok true)
   )
 )
+
+;; Add or remove an election manager
+(define-public (set-election-manager (manager principal) (is-manager bool))
+  (begin
+    (asserts! (is-eq tx-sender (var-get admin)) ERR_UNAUTHORIZED)
+    (ok (map-set election-managers manager is-manager))
+  )
+)
+
+;; Check if user is an election manager
+(define-read-only (is-election-manager (manager principal))
+  (default-to false (map-get? election-managers manager))
+)
+
+;; Create a new election
+(define-public (create-election
+    (name (string-ascii 100))
+    (description (string-ascii 500))
+    (start-time uint)
+    (end-time uint)
+    (verification-method uint)
+    (minimum-token-holding uint)
+    (token-address (optional principal))
+    (private-voting bool)
+  )
+  (let 
+    ((election-id (var-get next-election-id)))
+    
+    ;; Check if caller is an election manager
+    (asserts! (is-election-manager tx-sender) ERR_UNAUTHORIZED)
+    
+    ;; Check timestamps
+    (asserts! (> start-time block-height) ERR_INVALID_TIME)
+    (asserts! (> end-time start-time) ERR_INVALID_TIME)
+    
+    ;; Create the election
+    (map-set elections
+      { election-id: election-id }
+      {
+        name: name,
+        description: description,
+        start-time: start-time,
+        end-time: end-time,
+        status: u0, ;; Created status
+        creator: tx-sender,
+        verification-method: verification-method,
+        minimum-token-holding: minimum-token-holding,
+        token-address: token-address,
+        private-voting: private-voting,
+        proposal-count: u0,
+        total-votes-cast: u0,
+        results-published: false
+      }
+    )
+    
+    ;; Increment the election ID counter
+    (var-set next-election-id (+ election-id u1))
+    
+    ;; Return the new election ID
+    (ok election-id)
+  )
+)
+
+;; Add a proposal to an election
+(define-public (add-proposal
+    (election-id uint)
+    (name (string-ascii 100))
+    (description (string-ascii 500))
+  )
+  (let 
+    ((election (unwrap! (map-get? elections { election-id: election-id }) ERR_ELECTION_NOT_FOUND))
+     (proposal-id (+ (get proposal-count election) u1)))
+    
+    ;; Check if caller is an election manager
+    (asserts! (is-election-manager tx-sender) ERR_UNAUTHORIZED)
+    
+    ;; Check if election is in Created status
+    (asserts! (is-eq (get status election) u0) ERR_INVALID_STATUS)
+    
+    ;; Add the proposal
+    (map-set proposals
+      { election-id: election-id, proposal-id: proposal-id }
+      {
+        name: name,
+        description: description,
+        vote-count: u0
+      }
+    )
+    
+    ;; Update proposal count in election
+    (map-set elections
+      { election-id: election-id }
+      (merge election { proposal-count: proposal-id })
+    )
