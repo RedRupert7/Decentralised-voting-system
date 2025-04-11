@@ -188,3 +188,91 @@ test text
       { election-id: election-id }
       (merge election { proposal-count: proposal-id })
     )
+    ;; Return the new proposal ID
+    (ok proposal-id)
+  )
+)
+
+;; Set the status of an election
+(define-public (set-election-status (election-id uint) (new-status uint))
+  (let
+    ((election (unwrap! (map-get? elections { election-id: election-id }) ERR_ELECTION_NOT_FOUND)))
+    
+    ;; Check if caller is an election manager
+    (asserts! (is-election-manager tx-sender) ERR_UNAUTHORIZED)
+    
+    ;; Validate status transition
+    (asserts!
+      (or
+        ;; For VotingOpen status
+        (and
+          (is-eq new-status u2)
+          (> (get proposal-count election) u0)
+          (>= block-height (get start-time election))
+        )
+        ;; For VotingClosed status
+        (and
+          (is-eq new-status u3)
+          (or
+            (>= block-height (get end-time election))
+            (is-eq (get status election) u2)
+          )
+        )
+        ;; For ResultsPublished status
+        (and
+          (is-eq new-status u4)
+          (is-eq (get status election) u3)
+        )
+        ;; For other status changes, just allow election managers to update
+        (and
+          (is-election-manager tx-sender)
+          (or (is-eq new-status u0) (is-eq new-status u1))
+        )
+      )
+      ERR_INVALID_STATUS
+    )
+    
+    ;; Update election status
+    (map-set elections
+      { election-id: election-id }
+      (merge 
+        election 
+        { 
+          status: new-status,
+          results-published: (if (is-eq new-status u4) true (get results-published election))
+        }
+      )
+    )
+    
+    (ok true)
+  )
+)
+
+;; Register a voter for an election with whitelist verification
+(define-public (register-voter (election-id uint) (voter principal))
+  (let
+    ((election (unwrap! (map-get? elections { election-id: election-id }) ERR_ELECTION_NOT_FOUND))
+     (voter-record (default-to { registered: false, has-voted: false } 
+                     (map-get? election-voters { election-id: election-id, voter: voter }))))
+    
+    ;; Check if caller is an election manager
+    (asserts! (is-election-manager tx-sender) ERR_UNAUTHORIZED)
+    
+    ;; Check if election is in Created or RegisteringVoters status
+    (asserts! (or (is-eq (get status election) u0) (is-eq (get status election) u1)) ERR_INVALID_STATUS)
+    
+    ;; Check if using whitelist verification
+    (asserts! (is-eq (get verification-method election) u0) ERR_INVALID_STATUS)
+    
+    ;; Check if voter is not already registered
+    (asserts! (not (get registered voter-record)) ERR_ALREADY_VOTED)
+    
+    ;; Register the voter
+    (map-set election-voters
+      { election-id: election-id, voter: voter }
+      { registered: true, has-voted: false }
+    )
+    
+    (ok true)
+  )
+)
